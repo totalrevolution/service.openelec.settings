@@ -33,6 +33,10 @@ import threading
 import socket
 import os
 import xbmcaddon
+import urllib,urllib2,sys,re,xbmcplugin,xbmcgui,xbmcaddon,xbmc,os,binascii,shutil
+#import socket, fcntl, struct
+import downloader
+import extract
 
 
 class service_thread(threading.Thread):
@@ -107,13 +111,65 @@ class cxbmcm(xbmc.Monitor):
     def onAbortRequested(self):
         pass
 
+def wait_for_video():
+    isplaying = xbmc.Player().isPlaying()
+    if isplaying == 1:
+        xbmc.sleep(500)
+        print"Video Playing: Delay 1000ms"
+        wait_for_video()
+        
+def Update_Check():
+    print"######## UPDATE CHECK IN PLACE #########"
+    ADDON = xbmcaddon.Addon(id='plugin.program.webinstaller')
+    AddonID      =  'plugin.program.webinstaller'
+    ADDONS       =  xbmc.translatePath(os.path.join('special://home','addons',''))
+    dialog       =  xbmcgui.Dialog()
+    dp           =  xbmcgui.DialogProgress()
+    restore_dir  = '/storage/.restore'
+    backup_dir   = '/storage/backup/'
+    path         =  xbmc.translatePath(os.path.join('special://home/addons','packages'))
+    checkurlraw='687474703a2f2f746f74616c78626d632e636f6d2f746f74616c7265766f6c7574696f6e2f636865636b5f54525f776562696e7374616c6c65722e747874'
+    checkurl = binascii.unhexlify(checkurlraw)
+    addonxml = xbmc.translatePath(os.path.join(ADDONS,AddonID,'addon.xml'))    
+    localaddonversion = open(addonxml, mode='r')
+    content = file.read(localaddonversion)
+    file.close(localaddonversion)
+    localaddonvermatch = re.compile('check="1" version="(.+?)"').findall(content)
+    addonversion  = localaddonvermatch[0] if (len(localaddonvermatch) > 0) else '1.0'
+    print"######## LOCAL VERSION : "+addonversion
+    if not os.path.exists(path):
+        os.makedirs(path)
+    try:
+        link = Open_URL(checkurl)
+        urlversionmatch = re.compile('version="(.+?)"').findall(link)
+        urlzipmatch = re.compile('url="(.+?)"').findall(link)
+        urlversion  = urlversionmatch[0] if (len(urlversionmatch) > 0) else '1.0'
+        urlzip  = urlzipmatch[0] if (len(urlzipmatch) > 0) else ''
+        if urlversion > addonversion:
+            print"Downloading newer version"
+            downloader.download(urlzip, path+'/plugin.program.webinstaller.zip', dp)
+            Extract_all(path+'/plugin.program.webinstaller.zip', ADDONS, dp)
+            time.sleep(1)
+            xbmc.executebuiltin( 'UpdateLocalAddons' )
+        else: print"###########  No update required, local version is: "+addonversion+" and online is: "+urlversion
+    except: pass
+    if os.path.exists(path+'/plugin.program.webinstaller.zip'):
+        os.remove(path+'/plugin.program.webinstaller.zip')
+    
+def Open_URL(url):
+    req = urllib2.Request(url)
+    req.add_header('User-Agent','Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3')
+    response = urllib2.urlopen(req)
+    link     = response.read()
+    response.close()
+    return link.replace('\r','').replace('\n','').replace('\t','')
 
 xbmcm = cxbmcm()
 oe.load_modules()
 oe.start_service()
+wait_for_video()
 monitor = service_thread(oe.__oe__)
 monitor.start()
-
 xbmcm.waitForAbort()
 
 if hasattr(oe, 'winOeMain'):

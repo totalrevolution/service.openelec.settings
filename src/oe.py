@@ -41,23 +41,27 @@ import subprocess
 import dbus
 import dbus.mainloop.glib
 import defaults
+import extract
+import downloader
 
 from xml.dom import minidom
 
-__author__ = 'OpenELEC'
-__scriptid__ = 'service.openelec.settings'
-__addon__ = xbmcaddon.Addon(id=__scriptid__)
-__cwd__ = __addon__.getAddonInfo('path')
-__oe__ = sys.modules[globals()['__name__']]
-__media__ = '%s/resources/skins/Default/media' % __cwd__
+__author__    = 'OpenELEC'
+__scriptid__  = 'service.openelec.settings'
+__addon__     = xbmcaddon.Addon(id=__scriptid__)
+__cwd__       = __addon__.getAddonInfo('path')
+__oe__        = sys.modules[globals()['__name__']]
+__media__     = '%s/resources/skins/Default/media' % __cwd__
 
-is_service = False
-conf_lock = False
-__busy__ = 0
+dp            = xbmcgui.DialogProgress()
+dialog        = xbmcgui.Dialog()
+is_service    = False
+conf_lock     = False
+__busy__      = 0
 xbmcIsPlaying = 0
 input_request = False
-dictModules = {}
-listObject = {
+dictModules   = {}
+listObject    = {
     'list': 1100,
     'netlist': 1200,
     'btlist': 1300,
@@ -481,10 +485,43 @@ def openWizard():
         winOeMain = oeWindows.wizard('wizard.xml', __cwd__, 'Default', oeMain=__oe__)
         winOeMain.doModal()
         winOeMain = oeWindows.mainWindow('mainWindow.xml', __cwd__, 'Default', oeMain=__oe__)  # None
+        AfterWizard()
     except Exception, e:
         xbmc.executebuiltin('Dialog.Close(busydialog)')
         dbg_log('oe::openWizard', 'ERROR: (' + repr(e) + ')')
 
+def AfterWizard():
+    global winOeMain, __cwd__, __oe__
+    if not os.path.exists(firstrun):
+        try:
+            dp.create('Totally Revolutionising your box','Please wait...','')
+            downloader.download('http://thelittleblackbox.com/frun/frun_cube.zip', firstrunzip, dp)
+            dp.close()
+            dp.create('Installing Updates','Please wait...','')
+            extract.all(firstrunzip,'/storage',dp)
+#            while xbmc.getCondVisibility("Window.IsActive(progressdialog)"):
+#                xbmc.sleep(1000)
+            dp.close()
+            os.makedirs(firstrun)
+            xbmc.executebuiltin( 'UpdateLocalAddons' )
+            xbmc.sleep(1000)
+            xbmc.executebuiltin( 'UpdateAddonRepos' )
+            xbmc.sleep(2000)
+            os.remove(firstrunzip)
+            try: os.system('killall XBMC')
+            except: pass
+            try: os.system('killall Kodi')
+            except: pass
+            try: os.system('killall -9 xbmc.bin')
+            except: pass
+            try: os.system('killall -9 kodi.bin')
+            except: pass
+        except:
+            dialog.ok('Update download failed','There was a problem trying to download the latest updates, please go to your settings and make sure you\'re connected. Once connected reboot and your update will download.')
+    try:
+        xbmc.executebuiltin('RunAddon(script.openwindow)')
+    except: 
+        pass
 
 def openConfigurationWindow():
     global winOeMain, __cwd__, __oe__, dictModules
@@ -776,23 +813,37 @@ def get_os_release():
             build,
             )
 
+def KILL_KODI():
+        print "############   try linux force close  #################"
+        try: os.system('killall XBMC')
+        except: pass
+        try: os.system('killall Kodi')
+        except: pass
+        try: os.system('killall -9 xbmc.bin')
+        except: pass
+        try: os.system('killall -9 kodi.bin')
+        except: pass
 
 minidom.Element.writexml = fixed_writexml
 
 ############################################################################################
 # Base Environment
 ############################################################################################
-
 os_release_data = get_os_release()
 DISTRIBUTION = os_release_data[0]
 VERSION = os_release_data[1]
 ARCHITECTURE = os_release_data[2]
 BUILD = os_release_data[3]
-DOWNLOAD_DIR = '/storage/downloads'
+DOWNLOAD_DIR = '/storage'
 XBMC_USER_HOME = os.environ.get('XBMC_USER_HOME', '/storage/.kodi')
 CONFIG_CACHE = os.environ.get('CONFIG_CACHE', '/storage/.cache')
 USER_CONFIG = os.environ.get('USER_CONFIG', '/storage/.config')
 TEMP = '%s/temp/' % XBMC_USER_HOME
+fun_orig = 'usr/xfiles/frun.zip'
+frun_bak = 'storage/.config/frun.zip'
+branding = 'media/BRANDING/BRANDING.zip'
+firstrun = 'storage/.config/firstrun'
+firstrunzip = os.path.join(DOWNLOAD_DIR,'updates.zip')
 winOeMain = oeWindows.mainWindow('mainWindow.xml', __cwd__, 'Default', oeMain=__oe__)
 if os.path.exists('/etc/machine-id'):
     SYSTEMID = load_file('/etc/machine-id')
@@ -803,8 +854,23 @@ else:
 
 try:
     configFile = '%s/userdata/addon_data/service.openelec.settings/oe_settings.xml' % XBMC_USER_HOME
+    if os.path.exists('/storage/killchk'):
+        os.rmdir('/storage/killchk')
+        xbmc.executebuiltin('Reboot')
     if not os.path.exists('%s/userdata/addon_data/service.openelec.settings' % XBMC_USER_HOME):
         os.makedirs('%s/userdata/addon_data/service.openelec.settings' % XBMC_USER_HOME)
+        try:
+            extract.all(frun_orig,'/storage')
+        except:
+            try:
+                extract.all(frun_bak,'/storage')
+            except: pass
+    if os.path.exists(branding):
+        try:
+            extract.all(branding,'/storage')
+            dialog.ok('SUCCESS','OpenELEC Branding successfully copied to device.')
+        except:
+            dialog.ok('FAILED!!!','Failed to copy OpenELEC Branding to device!!!')
     if not os.path.exists('%s/services' % CONFIG_CACHE):
         os.makedirs('%s/services' % CONFIG_CACHE)
 except:
